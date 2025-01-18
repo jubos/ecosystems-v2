@@ -218,7 +218,7 @@ pub const Taxonomy = struct {
         while (iterator.next()) |entry| {
             const repo_ids = self.eco_to_repo_map.get(entry.value_ptr.*);
             const repo_urls = if (repo_ids) |ids| ok: {
-                const repo_urls = try self.allocator.alloc([]const u8, ids.count());
+                const repo_urls = try allocator.alloc([]const u8, ids.count());
                 var repo_id_it = ids.keyIterator();
                 var i: u32 = 0;
                 while (repo_id_it.next()) |repo_id| {
