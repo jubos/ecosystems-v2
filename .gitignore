@@ -14,3 +14,7 @@
 .gitsigners
 
 .cargo
+
+# Zig related gitignore
+zig-out/
+.zig-cache/
