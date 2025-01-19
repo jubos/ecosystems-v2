@@ -1,11 +1,11 @@
 const std = @import("std");
 
 pub fn hasValidTimestamp(filename: []const u8) bool {
-    // Check minimum length
-    if (filename.len < 19) return false;
+    // Check minimum length (YYYY-MM-DDTHHMMSS = 17 characters)
+    if (filename.len < 17) return false;
 
     // Check all digits and delimiters are in correct positions
-    const pattern = "0000-00-00T00:00:00";
+    const pattern = "0000-00-00T000000";
     inline for (pattern, 0..) |c, i| {
         switch (c) {
             '0' => {
@@ -22,8 +22,8 @@ pub fn hasValidTimestamp(filename: []const u8) bool {
     const month = std.fmt.parseInt(u8, filename[5..7], 10) catch return false;
     const day = std.fmt.parseInt(u8, filename[8..10], 10) catch return false;
     const hour = std.fmt.parseInt(u8, filename[11..13], 10) catch return false;
-    const minute = std.fmt.parseInt(u8, filename[14..16], 10) catch return false;
-    const second = std.fmt.parseInt(u8, filename[17..19], 10) catch return false;
+    const minute = std.fmt.parseInt(u8, filename[13..15], 10) catch return false;
+    const second = std.fmt.parseInt(u8, filename[15..17], 10) catch return false;
 
     // Validate ranges
     if (month < 1 or month > 12) return false;
@@ -51,17 +51,18 @@ test "hasValidTimestamp" {
     const testing = std.testing;
 
     // Valid timestamps
-    try testing.expect(hasValidTimestamp("2024-01-16T02:00:00_test.txt"));
-    try testing.expect(hasValidTimestamp("2024-02-29T23:59:59_leap.txt"));
-    try testing.expect(hasValidTimestamp("2024-12-31T00:00:00"));
+    try testing.expect(hasValidTimestamp("2024-01-16T020000_test.txt"));
+    try testing.expect(hasValidTimestamp("2024-02-29T235959_leap.txt"));
+    try testing.expect(hasValidTimestamp("2024-12-31T000000"));
 
     // Invalid timestamps
-    try testing.expect(!hasValidTimestamp("2024-13-01T00:00:00_test.txt")); // Invalid month
-    try testing.expect(!hasValidTimestamp("2024-04-31T00:00:00_test.txt")); // Invalid day for April
-    try testing.expect(!hasValidTimestamp("2023-02-29T00:00:00_test.txt")); // Invalid leap year
-    try testing.expect(!hasValidTimestamp("2024-01-16T24:00:00_test.txt")); // Invalid hour
-    try testing.expect(!hasValidTimestamp("2024-01-16T00:60:00_test.txt")); // Invalid minute
+    try testing.expect(!hasValidTimestamp("2024-13-01T000000_test.txt")); // Invalid month
+    try testing.expect(!hasValidTimestamp("2024-04-31T000000_test.txt")); // Invalid day for April
+    try testing.expect(!hasValidTimestamp("2023-02-29T000000_test.txt")); // Invalid leap year
+    try testing.expect(!hasValidTimestamp("2024-01-16T240000_test.txt")); // Invalid hour
+    try testing.expect(!hasValidTimestamp("2024-01-16T006000_test.txt")); // Invalid minute
     try testing.expect(!hasValidTimestamp("not_a_timestamp.txt")); // No timestamp
     try testing.expect(!hasValidTimestamp("2024-01-16_no_time.txt")); // Missing time
-    try testing.expect(!hasValidTimestamp("2024-01-16 02:00:00_test.txt")); // Wrong separator
+    try testing.expect(!hasValidTimestamp("20240116T020000_test.txt")); // Wrong date format
+    try testing.expect(!hasValidTimestamp("2024-01-16-020000_test.txt")); // Wrong separator
 }
