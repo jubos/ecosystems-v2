@@ -189,6 +189,8 @@ pub const Taxonomy = struct {
                 try ecoCon(remainder, self);
             } else if (std.mem.eql(u8, keyword, "ecoadd")) {
                 try ecoAdd(remainder, self);
+            } else if (std.mem.eql(u8, keyword, "repmov")) {
+                try repMov(remainder, self);
             }
         }
     }
@@ -309,6 +311,16 @@ pub const Taxonomy = struct {
         var repo_to_tag_map = repos_for_eco_entry.value_ptr;
         try repo_to_tag_map.putNoClobber(repo_id, IdSet.init(self.allocator));
     }
+
+    fn moveRepo(self: *Taxonomy, src: []const u8, dst: []const u8) !void {
+        const src_id = self.repo_ids.get(src) orelse return error.InvalidSourceRepo;
+        if (self.repo_ids.contains(dst)) {
+            return error.DestinationRepoAlreadyExists;
+        }
+        _ = self.repo_ids.remove(src);
+        try self.repo_id_to_url_map.put(src_id, dst);
+        try self.repo_ids.put(dst, src_id);
+    }
 };
 
 /// Returns whether  a line is a comment
@@ -369,6 +381,21 @@ fn repAdd(remainder: []const u8, db: *Taxonomy) !void {
     }
 }
 
+/// Rename a repo
+fn repMov(remainder: []const u8, db: *Taxonomy) !void {
+    var tokens: [2]?[]const u8 = undefined;
+    const token_count = try shlex.split(remainder, &tokens);
+    if (token_count != 2) {
+        return error.RepMovRequiresExactlyTwoParameters;
+    }
+
+    if (tokens[0] != null and tokens[1] != null) {
+        const src = tokens[0].?;
+        const dst = tokens[1].?;
+        try db.moveRepo(src, dst);
+    }
+}
+
 fn lessThanLowercase(_: void, a: []const u8, b: []const u8) bool {
     var i: usize = 0;
     while (i < @min(a.len, b.len)) : (i += 1) {
@@ -381,7 +408,8 @@ fn lessThanLowercase(_: void, a: []const u8, b: []const u8) bool {
     return a.len < b.len;
 }
 
-/// This function finds the root of the project so that unit tests can find the test fixtures directory.
+/// This function finds the root of the project so that unit tests
+/// can find the test fixtures directory.
 fn findBuildZigDirAlloc(allocator: std.mem.Allocator) ![]const u8 {
     const self_path = try std.fs.selfExePathAlloc(allocator);
     defer allocator.free(self_path);
@@ -456,5 +484,8 @@ test "time ordering" {
     try testing.expectEqual(stats.repo_count, 2);
 
     var eth = (try db.eco("Ethereum")).?;
+    try testing.expectEqual(eth.repos.len, 2);
+    try testing.expectEqualStrings("https://github.com/ethereum/aleth", eth.repos[0]);
+    try testing.expectEqualStrings("https://github.com/openethereum/parity-ethereum", eth.repos[1]);
     defer eth.deinit(a);
 }
