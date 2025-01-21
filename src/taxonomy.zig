@@ -35,11 +35,12 @@ pub const TaxonomyLoadResult = struct { errors: ArrayList(TaxonomyError) };
 pub const Ecosystem = struct {
     id: u32,
     name: []const u8,
-    //sub_ecosystems: [][]const u8,
+    sub_ecosystems: []const []const u8,
     repos: []const []const u8,
 
     pub fn deinit(self: *Ecosystem, allocator: std.mem.Allocator) void {
         allocator.free(self.repos);
+        allocator.free(self.sub_ecosystems);
     }
 };
 
@@ -66,6 +67,7 @@ pub const Taxonomy = struct {
     repo_ids: SliceIdMap,
     tag_ids: SliceIdMap,
     repo_id_to_url_map: IdSliceMap,
+    eco_id_to_name_map: IdSliceMap,
     eco_to_repo_map: EcoToRepoMap,
     repo_to_eco_map: RepoToEcoMap,
     parent_to_child_map: ParentToChildMap,
@@ -85,6 +87,7 @@ pub const Taxonomy = struct {
             .eco_to_repo_map = EcoToRepoMap.init(allocator),
             .repo_to_eco_map = RepoToEcoMap.init(allocator),
             .repo_id_to_url_map = IdSliceMap.init(allocator),
+            .eco_id_to_name_map = IdSliceMap.init(allocator),
         };
     }
 
@@ -106,6 +109,7 @@ pub const Taxonomy = struct {
         self.repo_ids.deinit();
         self.repo_id_to_url_map.deinit();
         self.repo_to_eco_map.deinit();
+        self.eco_id_to_name_map.deinit();
 
         for (self.buffers.items) |buf| {
             self.allocator.free(buf);
@@ -189,6 +193,8 @@ pub const Taxonomy = struct {
                 try ecoCon(remainder, self);
             } else if (std.mem.eql(u8, keyword, "ecoadd")) {
                 try ecoAdd(remainder, self);
+            } else if (std.mem.eql(u8, keyword, "ecodis")) {
+                try ecoDis(remainder, self);
             } else if (std.mem.eql(u8, keyword, "repmov")) {
                 try repMov(remainder, self);
             }
@@ -248,8 +254,8 @@ pub const Taxonomy = struct {
     }
 
     pub fn eco(self: *Taxonomy, name: []const u8) !?Ecosystem {
-        const eco_id_entry = self.eco_ids.getEntry(name) orelse return null;
-        const repo_ids = self.eco_to_repo_map.get(eco_id_entry.value_ptr.*);
+        const eco_id = self.eco_ids.get(name) orelse return null;
+        const repo_ids = self.eco_to_repo_map.get(eco_id);
         const repo_urls = if (repo_ids) |ids| ok: {
             const repo_urls = try self.allocator.alloc([]const u8, ids.count());
             var iterator = ids.keyIterator();
@@ -263,10 +269,26 @@ pub const Taxonomy = struct {
         } else ko: {
             break :ko &[_][]const u8{};
         };
+
+        const sub_ids = self.parent_to_child_map.get(eco_id);
+        const sub_ecosystem_names = if (sub_ids) |sub_id_set| ok: {
+            var sub_names = try self.allocator.alloc([]const u8, sub_id_set.count());
+            var iterator = sub_id_set.keyIterator();
+            var i: u32 = 0;
+            while (iterator.next()) |sub_id| {
+                sub_names[i] = self.eco_id_to_name_map.get(sub_id.*).?;
+                i += 1;
+            }
+            std.mem.sort([]const u8, sub_names, {}, lessThanLowercase);
+            break :ok sub_names;
+        } else ko: {
+            break :ko &[_][]const u8{};
+        };
         return .{
-            .id = eco_id_entry.value_ptr.*,
-            .name = eco_id_entry.key_ptr.*,
+            .id = eco_id,
+            .name = name,
             .repos = repo_urls,
+            .sub_ecosystems = sub_ecosystem_names,
         };
     }
 
@@ -275,10 +297,7 @@ pub const Taxonomy = struct {
         if (!eco_id_entry.found_existing) {
             self.eco_auto_id += 1;
             eco_id_entry.value_ptr.* = self.eco_auto_id;
-            //std.debug.print("Creating {s} with id: {d}\n", .{ name, self.eco_auto_id });
-        } else {
-            //const eco_id = eco_id_entry.value_ptr;
-            //std.debug.print("Found {s} with existing_id: {}\n", .{ name, eco_id });
+            try self.eco_id_to_name_map.putNoClobber(self.eco_auto_id, name);
         }
     }
 
@@ -290,6 +309,14 @@ pub const Taxonomy = struct {
             child_entry.value_ptr.* = IdSet.init(self.allocator);
         }
         try child_entry.value_ptr.put(child_id, {});
+    }
+
+    fn disconnectEco(self: *Taxonomy, parent: []const u8, child: []const u8) !void {
+        const parent_id = self.eco_ids.get(parent) orelse return error.InvalidParentEcosystem;
+        const child_id = self.eco_ids.get(child) orelse return error.InvalidChildEcosystem;
+
+        const child_set = self.parent_to_child_map.get(parent_id) orelse return error.ParentEcosystemHasNoChildren;
+        child_set.remove(child_id);
     }
 
     //tags: ?[][]const u8) {
@@ -357,6 +384,22 @@ fn ecoCon(sub_line: []const u8, db: *Taxonomy) !void {
     const token_count = try shlex.split(sub_line, &tokens);
     if (token_count != 2) {
         return error.EcoConRequiresExactlyTwoParameters;
+    }
+
+    if (tokens[0] != null and tokens[1] != null) {
+        const parent = tokens[0].?;
+        const child = tokens[1].?;
+        //std.debug.print("Connecting {s} to {s}\n", .{ parent, child });
+        try db.connectEco(parent, child);
+    }
+}
+
+/// Disconnect an ecosystem from another one.
+fn ecoDis(sub_line: []const u8, db: *Taxonomy) !void {
+    var tokens: [2]?[]const u8 = undefined;
+    const token_count = try shlex.split(sub_line, &tokens);
+    if (token_count != 2) {
+        return error.EcoDisRequiresExactlyTwoParameters;
     }
 
     if (tokens[0] != null and tokens[1] != null) {
@@ -451,16 +494,16 @@ test "load of single ecosystem" {
     try db.load(tests_path);
     const stats = db.stats();
 
-    try testing.expectEqual(stats.migration_count, 1);
-    try testing.expectEqual(stats.eco_count, 1);
-    try testing.expectEqual(stats.repo_count, 3);
-    try testing.expectEqual(stats.tag_count, 0);
+    try testing.expectEqual(1, stats.migration_count);
+    try testing.expectEqual(1, stats.eco_count);
+    try testing.expectEqual(3, stats.repo_count);
+    try testing.expectEqual(0, stats.tag_count);
     var btc = (try db.eco("Bitcoin")).?;
     defer btc.deinit(a);
 
     try testing.expectEqualStrings("Bitcoin", btc.name);
-    try testing.expectEqual(btc.id, 1);
-    try testing.expectEqual(btc.repos.len, 3);
+    try testing.expectEqual(1, btc.id);
+    try testing.expectEqual(3, btc.repos.len);
     try testing.expectEqualStrings("https://github.com/bitcoin/bips", btc.repos[0]);
 }
 
@@ -479,13 +522,38 @@ test "time ordering" {
     try db.load(tests_path);
     const stats = db.stats();
 
-    try testing.expectEqual(stats.migration_count, 3);
-    try testing.expectEqual(stats.eco_count, 1);
-    try testing.expectEqual(stats.repo_count, 2);
+    try testing.expectEqual(3, stats.migration_count);
+    try testing.expectEqual(1, stats.eco_count);
+    try testing.expectEqual(2, stats.repo_count);
 
     var eth = (try db.eco("Ethereum")).?;
-    try testing.expectEqual(eth.repos.len, 2);
+    try testing.expectEqual(2, eth.repos.len);
     try testing.expectEqualStrings("https://github.com/ethereum/aleth", eth.repos[0]);
     try testing.expectEqualStrings("https://github.com/openethereum/parity-ethereum", eth.repos[1]);
     defer eth.deinit(a);
+}
+
+test "ecosystem disconnect" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    const build_dir = try findBuildZigDirAlloc(a);
+    defer testing.allocator.free(build_dir);
+
+    // Navigate up to project root and then to tests directory
+    const tests_path = try std.fs.path.join(a, &[_][]const u8{ build_dir, "tests", "ecosystem_disconnect" });
+    defer a.free(tests_path);
+
+    var db = Taxonomy.init(testing.allocator);
+    defer db.deinit();
+    try db.load(tests_path);
+    const stats = db.stats();
+
+    try testing.expectEqual(2, stats.migration_count);
+    try testing.expectEqual(5, stats.eco_count);
+    try testing.expectEqual(1, stats.repo_count);
+
+    var poly = (try db.eco("Polygon")).?;
+    defer poly.deinit(a);
+    try testing.expectEqual(1, poly.sub_ecosystems.len);
+    try testing.expectEqualStrings("DeGods", poly.sub_ecosystems[0]);
 }
