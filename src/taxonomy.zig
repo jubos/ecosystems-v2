@@ -118,7 +118,6 @@ pub const Taxonomy = struct {
     }
 
     pub fn load(self: *Taxonomy, root: []const u8) !void {
-        std.debug.print("validate: {s}\n", .{root});
         var dir = try std.fs.cwd().openDir(root, .{ .iterate = true });
         defer dir.close();
 
@@ -153,7 +152,6 @@ pub const Taxonomy = struct {
         var fba = std.heap.FixedBufferAllocator.init(&path_buf);
         const fba_allocator = fba.allocator();
         for (migration_files.items) |filename| {
-            std.debug.print("{s}\n", .{filename});
             fba.reset();
             const full_path = try std.fs.path.join(fba_allocator, &[_][]const u8{ root, filename });
             try self.loadFile(full_path);
@@ -162,7 +160,6 @@ pub const Taxonomy = struct {
     }
 
     fn loadFile(self: *Taxonomy, path: []const u8) !void {
-        std.debug.print("Parsing {s}\n", .{path});
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
 
