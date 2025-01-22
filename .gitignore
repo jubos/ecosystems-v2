@@ -18,3 +18,4 @@
 # Zig related gitignore
 zig-out/
 .zig-cache/
+.tcache/
