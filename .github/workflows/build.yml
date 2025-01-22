@@ -25,12 +25,22 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Generate hash of core files
+        id: hash
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          echo "files_hash=$(find src/ -type f -name "*.zig" | sort | xargs sha1sum | sha1sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Cache build artifacts
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: zig-out/bin/ce
+          key: ${{ runner.os }}-build-${{ steps.hash.outputs.files_hash }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
+      - name: Build if cache miss
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ./run.sh build
+          ./run.sh test
