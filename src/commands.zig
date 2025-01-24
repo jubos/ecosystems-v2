@@ -118,8 +118,6 @@ fn parseCommand(args: []const []const u8) CommandError!CommandArgs {
     else
         return CommandError.InvalidCommand;
 
-    std.debug.print("Command: {s}\n", .{cmd_str});
-
     if (command == .validate or command == .@"export") {
         const run_options = try parseRunOptions(command, args[1..]);
         return CommandArgs{
@@ -138,7 +136,7 @@ fn parseCommand(args: []const []const u8) CommandError!CommandArgs {
 
 fn printVersion() !void {
     const stdout = std.io.getStdOut().writer();
-    try stdout.writeAll("crypto ecosystems 2.0\n");
+    try stdout.writeAll("2.0\n");
 }
 
 fn executeCommand(a: std.mem.Allocator, cmd: CommandArgs) !void {
@@ -159,7 +157,22 @@ pub fn cmdMain(allocator: std.mem.Allocator) !void {
         return;
     }
 
-    const cmd = try parseCommand(args[1..]);
+    const cmd = parseCommand(args[1..]) catch |err| {
+        switch (err) {
+            error.MissingOutputPath => {
+                std.debug.print("Please specify an output path for export\n\n", .{});
+            },
+            else => {},
+        }
+        try printUsage();
+        return;
+    };
+    if (cmd.run_options) |opts| {
+        if (opts.help) {
+            try printUsage();
+            return;
+        }
+    }
     try executeCommand(allocator, cmd);
 }
 
@@ -191,12 +204,3 @@ pub fn cmdExport(gpa: std.mem.Allocator, options: RunOptions) !void {
         try taxonomy.exportJson(output);
     }
 }
-
-// pub fn cmdExport(gpa: std.mem.Allocator, options: RunOptions) !void {
-//     const root = options.root orelse try defaultMigrationsPath(gpa);
-//     var taxonomy = db.Taxonomy.init(gpa);
-//     defer taxonomy.deinit();
-//     const load_result = try taxonomy.load(root);
-//     _ = load_result;
-//     try taxonomy.exportJson(output_file);
-// }
