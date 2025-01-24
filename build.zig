@@ -14,8 +14,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const clap_module = b.addModule("clap", .{ .root_source_file = b.path("vendor/zig-clap/clap.zig") });
-    exe.root_module.addImport("clap", clap_module);
 
     b.installArtifact(exe);
     const run_cmd = b.addRunArtifact(exe);
@@ -33,7 +31,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe_unit_tests.root_module.addImport("clap", clap_module);
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 

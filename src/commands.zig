@@ -1,125 +1,202 @@
 const std = @import("std");
-const clap = @import("clap");
 const db = @import("taxonomy.zig");
 
-const SubCommands = enum {
-    @"export",
+const Command = enum {
     help,
+    version,
+    @"export",
     validate,
 };
 
-const main_parsers = .{ .command = clap.parsers.enumeration(SubCommands), .str = clap.parsers.string };
+const CommandError = error{
+    InvalidCommand,
+    MissingArgument,
+    InvalidOption,
+    MissingOutputPath,
+    DuplicateOption,
+    EmptyOptionValue,
+    OutputAfterOptions,
+};
 
-const main_params = clap.parseParamsComptime(
-    \\-h, --help       Display this help and exit.
-    \\-r, --root <str> root of the data directory where the taxonomy is stored.
-    \\<command>        Main command
-    \\
-);
+const RunOptions = struct {
+    help: bool = false,
+    root: ?[]const u8 = null,
+    output: ?[]const u8 = null,
 
-const MainArgs = clap.ResultEx(clap.Help, &main_params, main_parsers);
+    // Validation flags to prevent duplicates
+    root_seen: bool = false,
+    output_seen: bool = false,
+};
+
+const CommandArgs = struct {
+    command: Command,
+    run_options: ?RunOptions = null,
+};
+
+fn parseRunOptions(command: Command, args: []const []const u8) CommandError!RunOptions {
+    var options = RunOptions{};
+    var i: usize = 0;
+
+    while (i < args.len) {
+        const arg = args[i];
+
+        // Handle empty arguments
+        if (arg.len == 0) return CommandError.InvalidOption;
+
+        if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+            if (options.help) return CommandError.DuplicateOption;
+            options.help = true;
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--root")) {
+            if (options.root_seen) return CommandError.DuplicateOption;
+            options.root_seen = true;
+
+            if (i + 1 >= args.len) return CommandError.MissingArgument;
+            const root_path = args[i + 1];
+
+            // Check for empty root path or if it starts with a dash
+            if (root_path.len == 0) return CommandError.EmptyOptionValue;
+            if (std.mem.startsWith(u8, root_path, "-")) return CommandError.InvalidOption;
+
+            options.root = root_path;
+            i += 2;
+        } else if (std.mem.startsWith(u8, arg, "-")) {
+            return CommandError.InvalidOption;
+        } else {
+            // Treat as output path (positional argument)
+            if (options.output_seen) return CommandError.DuplicateOption;
+            options.output_seen = true;
+            options.output = arg;
+
+            // Check if there are more arguments after output
+            if (i + 1 < args.len) return CommandError.OutputAfterOptions;
+
+            i += 1;
+        }
+    }
+
+    // Only require output if help is not requested
+    if (command == .@"export" and !options.output_seen) {
+        return CommandError.MissingOutputPath;
+    }
+    return options;
+}
+
+fn printUsage() !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print(
+        \\Usage: ce [-h | --help] <command> [<args>]
+        \\
+        \\Commands:
+        \\  validate                 Validate all of the migrations
+        \\      -r, --root DIR       The direction containing the migrations file (default ./migrations)
+        \\
+        \\  export                   Export the taxonomy to a json file
+        \\      -r, --root DIR       The direction containing the migrations file (default ./migrations)
+        \\      -e, --ecosystem STR  The name of an ecosystem if you only want to export one
+        \\      <output>             The output file   
+        \\
+        \\  help                     Show this help message
+        \\  version                  Show program version
+        \\
+    , .{});
+}
+
+fn parseCommand(args: []const []const u8) CommandError!CommandArgs {
+    if (args.len == 0) return CommandError.MissingArgument;
+
+    const cmd_str = args[0];
+
+    const command = if (std.mem.eql(u8, cmd_str, "help"))
+        Command.help
+    else if (std.mem.eql(u8, cmd_str, "version"))
+        Command.version
+    else if (std.mem.eql(u8, cmd_str, "validate"))
+        Command.validate
+    else if (std.mem.eql(u8, cmd_str, "export"))
+        Command.@"export"
+    else
+        return CommandError.InvalidCommand;
+
+    std.debug.print("Command: {s}\n", .{cmd_str});
+
+    if (command == .validate or command == .@"export") {
+        const run_options = try parseRunOptions(command, args[1..]);
+        return CommandArgs{
+            .command = command,
+            .run_options = run_options,
+        };
+    }
+
+    if (args.len > 1) return CommandError.InvalidOption;
+
+    return CommandArgs{
+        .command = command,
+        .run_options = null,
+    };
+}
+
+fn printVersion() !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.writeAll("crypto ecosystems 2.0\n");
+}
+
+fn executeCommand(a: std.mem.Allocator, cmd: CommandArgs) !void {
+    switch (cmd.command) {
+        .help => try printUsage(),
+        .version => try printVersion(),
+        .@"export" => try cmdExport(a, cmd.run_options.?),
+        .validate => try cmdValidate(a, cmd.run_options.?),
+    }
+}
 
 pub fn cmdMain(allocator: std.mem.Allocator) !void {
-    var iter = try std.process.ArgIterator.initWithAllocator(allocator);
-    defer iter.deinit();
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
 
-    _ = iter.next();
+    if (args.len < 2) {
+        try printUsage();
+        return;
+    }
 
-    var diag = clap.Diagnostic{};
-    var res = clap.parseEx(clap.Help, &main_params, main_parsers, &iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
+    const cmd = try parseCommand(args[1..]);
+    try executeCommand(allocator, cmd);
+}
 
-        // Terminate the parsing of arguments after parsing the first positional (0 is passed
-        // here because parsed positionals are, like slices and arrays, indexed starting at 0).
-        //
-        // This will terminate the parsing after parsing the subcommand enum and leave `iter`
-        // not fully consumed. It can then be reused to parse the arguments for subcommands
-        .terminating_positional = 0,
-    }) catch |err| {
-        diag.report(std.io.getStdErr().writer(), err) catch {};
-        return err;
-    };
-    defer res.deinit();
+pub fn cmdValidate(gpa: std.mem.Allocator, options: RunOptions) !void {
+    const default_dir = try defaultMigrationsPath(gpa);
+    defer gpa.free(default_dir);
 
-    if (res.args.help != 0)
-        return clap.help(std.io.getStdErr().writer(), clap.Help, &main_params, .{});
+    const root = options.root orelse default_dir;
+    var taxonomy = db.Taxonomy.init(gpa);
+    defer taxonomy.deinit();
+    const load_result = try taxonomy.load(root);
+    _ = load_result;
+}
 
-    const command = res.positionals[0] orelse return error.MissingCommand;
-    switch (command) {
-        .@"export" => try cmdExport(allocator, &iter, res),
-        .help => std.debug.print("--help\n", .{}),
-        .validate => try cmdValidate(allocator, &iter, res),
+fn defaultMigrationsPath(a: std.mem.Allocator) ![]const u8 {
+    return try std.fs.cwd().realpathAlloc(a, "migrations");
+}
+
+pub fn cmdExport(gpa: std.mem.Allocator, options: RunOptions) !void {
+    const default_dir = try defaultMigrationsPath(gpa);
+    defer gpa.free(default_dir);
+
+    const root = options.root orelse default_dir;
+    var taxonomy = db.Taxonomy.init(gpa);
+    defer taxonomy.deinit();
+    const load_result = try taxonomy.load(root);
+    _ = load_result;
+    if (options.output) |output| {
+        try taxonomy.exportJson(output);
     }
 }
 
-pub fn cmdValidate(gpa: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
-    const params = comptime clap.parseParamsComptime(
-        \\-h, --help Validate the taxonomy database stored in <root>
-        \\
-    );
-
-    // Here we pass the partially parsed argument iterator
-    var diag = clap.Diagnostic{};
-    var res = clap.parseEx(clap.Help, &params, clap.parsers.default, iter, .{
-        .diagnostic = &diag,
-        .allocator = gpa,
-    }) catch |err| {
-        diag.report(std.io.getStdErr().writer(), err) catch {};
-        return err;
-    };
-    defer res.deinit();
-
-    if (res.args.help != 0)
-        return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
-
-    if (main_args.args.root) |root| {
-        std.debug.print("main args root: {s}\n", .{root});
-        std.debug.print("cmd validate\n", .{});
-        var taxonomy = db.Taxonomy.init(gpa);
-        defer taxonomy.deinit();
-        const load_result = try taxonomy.load(root);
-        _ = load_result;
-    } else {
-        std.debug.print("Please specify the --root parameter", .{});
-    }
-}
-
-pub fn cmdExport(gpa: std.mem.Allocator, iter: *std.process.ArgIterator, main_args: MainArgs) !void {
-    const params = comptime clap.parseParamsComptime(
-        \\-h, --help export the taxonomy database stored in <root>
-        \\-e, --ecosystem only output a single ecosystem
-        \\<str> output file
-        \\
-    );
-
-    // Here we pass the partially parsed argument iterator
-    var diag = clap.Diagnostic{};
-    var res = clap.parseEx(clap.Help, &params, clap.parsers.default, iter, .{
-        .diagnostic = &diag,
-        .allocator = gpa,
-    }) catch |err| {
-        diag.report(std.io.getStdErr().writer(), err) catch {};
-        return err;
-    };
-    defer res.deinit();
-
-    if (res.args.help != 0)
-        return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
-
-    if (main_args.args.root) |root| {
-        if (res.positionals.len > 0) {
-            if (res.positionals[0]) |output_file| {
-                std.debug.print("main args root: {s}\n", .{root});
-                std.debug.print("cmd export to {s}\n", .{output_file});
-                var taxonomy = db.Taxonomy.init(gpa);
-                defer taxonomy.deinit();
-                const load_result = try taxonomy.load(root);
-                _ = load_result;
-                try taxonomy.exportJson(output_file);
-            }
-        }
-    } else {
-        std.debug.print("Please specify the --root parameter", .{});
-    }
-}
+// pub fn cmdExport(gpa: std.mem.Allocator, options: RunOptions) !void {
+//     const root = options.root orelse try defaultMigrationsPath(gpa);
+//     var taxonomy = db.Taxonomy.init(gpa);
+//     defer taxonomy.deinit();
+//     const load_result = try taxonomy.load(root);
+//     _ = load_result;
+//     try taxonomy.exportJson(output_file);
+// }

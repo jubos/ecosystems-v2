@@ -139,6 +139,8 @@ pub const Taxonomy = struct {
                 const name = try self.allocator.dupe(u8, entry.name);
                 if (timestamp.hasValidTimestamp(name)) {
                     try migration_files.append(name);
+                } else {
+                    self.allocator.free(name);
                 }
             }
         }
