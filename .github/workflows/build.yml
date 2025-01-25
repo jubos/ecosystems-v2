@@ -47,4 +47,4 @@ jobs:
 
       - name: Validate Migrations from Genesis
         run: |
-          ./run.sh validate
+          ./zig-out/bin/ce validate
