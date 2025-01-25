@@ -44,3 +44,8 @@ jobs:
         run: |
           ./run.sh build
           ./run.sh test
+
+      - name: Validate Migrations from Genesis
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ./run.sh validate
