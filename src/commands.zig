@@ -186,6 +186,15 @@ pub fn cmdValidate(gpa: std.mem.Allocator, options: RunOptions) !void {
     defer taxonomy.deinit();
     const load_result = try taxonomy.load(root);
     _ = load_result;
+
+    const stats = taxonomy.stats();
+
+    const magenta = "\x1b[35m";
+    const reset = "\x1b[0m";
+
+    try std.io.getStdOut().writer().print("{s}┃{s} {d:<6} Migrations\n", .{ magenta, reset, stats.migration_count });
+    try std.io.getStdOut().writer().print("{s}┃{s} {d:<6} Ecosystems\n", .{ magenta, reset, stats.eco_count });
+    try std.io.getStdOut().writer().print("{s}┃{s} {d:<6} Repos\n", .{ magenta, reset, stats.repo_count });
 }
 
 fn defaultMigrationsPath(a: std.mem.Allocator) ![]const u8 {
