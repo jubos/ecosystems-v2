@@ -1,5 +1,6 @@
 const std = @import("std");
 const db = @import("taxonomy.zig");
+const eql = std.mem.eql;
 
 const Command = enum {
     help,
@@ -33,6 +34,26 @@ const CommandArgs = struct {
     run_options: ?RunOptions = null,
 };
 
+fn printUsage() !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print(
+        \\Usage: ce [-h | --help] <command> [<args>]
+        \\
+        \\Commands:
+        \\  validate                 Validate all of the migrations
+        \\      -r, --root DIR       The direction containing the migrations file (default ./migrations)
+        \\
+        \\  export                   Export the taxonomy to a json file
+        \\      -r, --root DIR       The direction containing the migrations file (default ./migrations)
+        \\      -e, --ecosystem STR  The name of an ecosystem if you only want to export one
+        \\      <output>             The output file
+        \\
+        \\  help                     Show this help message
+        \\  version                  Show program version
+        \\
+    , .{});
+}
+
 fn parseRunOptions(command: Command, args: []const []const u8) CommandError!RunOptions {
     var options = RunOptions{};
     var i: usize = 0;
@@ -43,11 +64,11 @@ fn parseRunOptions(command: Command, args: []const []const u8) CommandError!RunO
         // Handle empty arguments
         if (arg.len == 0) return CommandError.InvalidOption;
 
-        if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+        if (eql(u8, arg, "-h") or eql(u8, arg, "--help")) {
             if (options.help) return CommandError.DuplicateOption;
             options.help = true;
             i += 1;
-        } else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--root")) {
+        } else if (eql(u8, arg, "-r") or eql(u8, arg, "--root")) {
             if (options.root_seen) return CommandError.DuplicateOption;
             options.root_seen = true;
 
@@ -82,38 +103,18 @@ fn parseRunOptions(command: Command, args: []const []const u8) CommandError!RunO
     return options;
 }
 
-fn printUsage() !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print(
-        \\Usage: ce [-h | --help] <command> [<args>]
-        \\
-        \\Commands:
-        \\  validate                 Validate all of the migrations
-        \\      -r, --root DIR       The direction containing the migrations file (default ./migrations)
-        \\
-        \\  export                   Export the taxonomy to a json file
-        \\      -r, --root DIR       The direction containing the migrations file (default ./migrations)
-        \\      -e, --ecosystem STR  The name of an ecosystem if you only want to export one
-        \\      <output>             The output file   
-        \\
-        \\  help                     Show this help message
-        \\  version                  Show program version
-        \\
-    , .{});
-}
-
 fn parseCommand(args: []const []const u8) CommandError!CommandArgs {
     if (args.len == 0) return CommandError.MissingArgument;
 
     const cmd_str = args[0];
 
-    const command = if (std.mem.eql(u8, cmd_str, "help"))
+    const command = if (eql(u8, cmd_str, "help"))
         Command.help
-    else if (std.mem.eql(u8, cmd_str, "version"))
+    else if (eql(u8, cmd_str, "version"))
         Command.version
-    else if (std.mem.eql(u8, cmd_str, "validate"))
+    else if (eql(u8, cmd_str, "validate"))
         Command.validate
-    else if (std.mem.eql(u8, cmd_str, "export"))
+    else if (eql(u8, cmd_str, "export"))
         Command.@"export"
     else
         return CommandError.InvalidCommand;
