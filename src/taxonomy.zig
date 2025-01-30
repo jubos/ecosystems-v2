@@ -196,6 +196,8 @@ pub const Taxonomy = struct {
                 try ecoDis(remainder, self);
             } else if (std.mem.eql(u8, keyword, "repmov")) {
                 try repMov(remainder, self);
+            } else if (std.mem.eql(u8, keyword, "ecomov")) {
+                try ecoMov(remainder, self);
             }
         }
     }
@@ -347,6 +349,16 @@ pub const Taxonomy = struct {
         try self.repo_id_to_url_map.put(src_id, dst);
         try self.repo_ids.put(dst, src_id);
     }
+
+    fn moveEco(self: *Taxonomy, src: []const u8, dst: []const u8) !void {
+        const src_id = self.eco_ids.get(src) orelse return error.InvalidSourceEcosystem;
+        if (self.eco_ids.contains(dst)) {
+            return error.DestinationEcosystemAlreadyExists;
+        }
+        _ = self.eco_ids.remove(src);
+        try self.eco_id_to_name_map.put(src_id, dst);
+        try self.eco_ids.put(dst, src_id);
+    }
 };
 
 /// Returns whether  a line is a comment
@@ -438,6 +450,20 @@ fn repMov(remainder: []const u8, db: *Taxonomy) !void {
     }
 }
 
+fn ecoMov(remainder: []const u8, db: *Taxonomy) !void {
+    var tokens: [2]?[]const u8 = undefined;
+    const token_count = try shlex.split(remainder, &tokens);
+    if (token_count != 2) {
+        return error.EcoMovRequiresExactlyTwoParameters;
+    }
+
+    if (tokens[0] != null and tokens[1] != null) {
+        const src = tokens[0].?;
+        const dst = tokens[1].?;
+        try db.moveEco(src, dst);
+    }
+}
+
 fn lessThanLowercase(_: void, a: []const u8, b: []const u8) bool {
     var i: usize = 0;
     while (i < @min(a.len, b.len)) : (i += 1) {
@@ -448,6 +474,21 @@ fn lessThanLowercase(_: void, a: []const u8, b: []const u8) bool {
         }
     }
     return a.len < b.len;
+}
+
+/// Tests Below
+fn setupTestFixtures(testDir: []const u8) !Taxonomy {
+    const a = std.testing.allocator;
+    const build_dir = try findBuildZigDirAlloc(a);
+    defer a.free(build_dir);
+
+    const tests_path = try std.fs.path.join(a, &[_][]const u8{ build_dir, "tests", testDir });
+    defer a.free(tests_path);
+
+    var db = Taxonomy.init(a);
+    try db.load(tests_path);
+
+    return db;
 }
 
 /// This function finds the root of the project so that unit tests
@@ -481,16 +522,9 @@ fn findBuildZigDirAlloc(allocator: std.mem.Allocator) ![]const u8 {
 test "load of single ecosystem" {
     const testing = std.testing;
     const a = testing.allocator;
-    const build_dir = try findBuildZigDirAlloc(a);
-    defer testing.allocator.free(build_dir);
 
-    // Navigate up to project root and then to tests directory
-    const tests_path = try std.fs.path.join(a, &[_][]const u8{ build_dir, "tests", "simple_ecosystems" });
-    defer a.free(tests_path);
-
-    var db = Taxonomy.init(testing.allocator);
+    var db = try setupTestFixtures("simple_ecosystems");
     defer db.deinit();
-    try db.load(tests_path);
     const stats = db.stats();
 
     try testing.expectEqual(1, stats.migration_count);
@@ -509,16 +543,9 @@ test "load of single ecosystem" {
 test "time ordering" {
     const testing = std.testing;
     const a = testing.allocator;
-    const build_dir = try findBuildZigDirAlloc(a);
-    defer testing.allocator.free(build_dir);
 
-    // Navigate up to project root and then to tests directory
-    const tests_path = try std.fs.path.join(a, &[_][]const u8{ build_dir, "tests", "time_ordering" });
-    defer a.free(tests_path);
-
-    var db = Taxonomy.init(testing.allocator);
+    var db = try setupTestFixtures("time_ordering");
     defer db.deinit();
-    try db.load(tests_path);
     const stats = db.stats();
 
     try testing.expectEqual(3, stats.migration_count);
@@ -535,16 +562,8 @@ test "time ordering" {
 test "ecosystem disconnect" {
     const testing = std.testing;
     const a = testing.allocator;
-    const build_dir = try findBuildZigDirAlloc(a);
-    defer testing.allocator.free(build_dir);
-
-    // Navigate up to project root and then to tests directory
-    const tests_path = try std.fs.path.join(a, &[_][]const u8{ build_dir, "tests", "ecosystem_disconnect" });
-    defer a.free(tests_path);
-
-    var db = Taxonomy.init(testing.allocator);
+    var db = try setupTestFixtures("ecosystem_disconnect");
     defer db.deinit();
-    try db.load(tests_path);
     const stats = db.stats();
 
     try testing.expectEqual(2, stats.migration_count);
@@ -555,4 +574,23 @@ test "ecosystem disconnect" {
     defer poly.deinit(a);
     try testing.expectEqual(1, poly.sub_ecosystems.len);
     try testing.expectEqualStrings("DeGods", poly.sub_ecosystems[0]);
+}
+
+test "ecosystem rename" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    var db = try setupTestFixtures("ecosystem_rename");
+    defer db.deinit();
+    const stats = db.stats();
+
+    try testing.expectEqual(1, stats.migration_count);
+    try testing.expectEqual(2, stats.eco_count);
+    try testing.expectEqual(2, stats.repo_count);
+
+    var multi = (try db.eco("MultiversX")).?;
+    defer multi.deinit(a);
+    try testing.expectEqual(1, multi.sub_ecosystems.len);
+
+    const elrond = try db.eco("Elrond");
+    try testing.expectEqual(null, elrond);
 }
