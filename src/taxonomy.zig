@@ -330,7 +330,6 @@ pub const Taxonomy = struct {
         child_set.remove(child_id);
     }
 
-    //tags: ?[][]const u8) {
     fn addRepo(self: *Taxonomy, eco_name: []const u8, repo_url: []const u8, tags_: ?[]?[]const u8) !void {
         const eco_id = self.eco_ids.get(eco_name) orelse return error.InvalidEcosystem;
         const repo_id_entry = try self.repo_ids.getOrPut(repo_url);
@@ -363,7 +362,6 @@ pub const Taxonomy = struct {
                 }
                 const tag_set = tag_map_entry.value_ptr;
                 try tag_set.putNoClobber(tag_id, {});
-                std.debug.print("Tag: {s}\n", .{tag.?});
             }
         }
     }
