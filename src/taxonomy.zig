@@ -559,7 +559,7 @@ test "load of single ecosystem" {
     try testing.expectEqual(1, stats.migration_count);
     try testing.expectEqual(1, stats.eco_count);
     try testing.expectEqual(3, stats.repo_count);
-    try testing.expectEqual(0, stats.tag_count);
+    try testing.expectEqual(1, stats.tag_count);
     var btc = (try db.eco("Bitcoin")).?;
     defer btc.deinit(a);
 
