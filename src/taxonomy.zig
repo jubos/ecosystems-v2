@@ -10,11 +10,13 @@ const AutoHashMap = std.hash_map.AutoHashMap;
 const SliceIdMap = HashMap([]const u8, u32, std.hash_map.StringContext, std.hash_map.default_max_load_percentage);
 const IdSliceMap = AutoHashMap(u32, []const u8);
 
+const EcoTagKey = struct { eco_id: u32, repo_id: u32 };
 const IdSet = AutoHashMap(u32, void);
-const RepoToTagMap = AutoHashMap(u32, ?IdSet);
-const EcoToRepoMap = AutoHashMap(u32, RepoToTagMap);
+const RepoSet = AutoHashMap(u32, void);
+const EcoToRepoMap = AutoHashMap(u32, RepoSet);
 const RepoToEcoMap = AutoHashMap(u32, u32);
 const ParentToChildMap = AutoHashMap(u32, IdSet);
+const EcoRepoToTagMap = AutoHashMap(EcoTagKey, IdSet);
 
 pub const TaxonomyStats = struct {
     migration_count: u32,
@@ -71,6 +73,7 @@ pub const Taxonomy = struct {
     eco_to_repo_map: EcoToRepoMap,
     repo_to_eco_map: RepoToEcoMap,
     parent_to_child_map: ParentToChildMap,
+    eco_repo_to_tag_map: EcoRepoToTagMap,
 
     pub fn init(allocator: std.mem.Allocator) Taxonomy {
         return .{
@@ -88,6 +91,7 @@ pub const Taxonomy = struct {
             .repo_to_eco_map = RepoToEcoMap.init(allocator),
             .repo_id_to_url_map = IdSliceMap.init(allocator),
             .eco_id_to_name_map = IdSliceMap.init(allocator),
+            .eco_repo_to_tag_map = EcoRepoToTagMap.init(allocator),
         };
     }
 
@@ -102,6 +106,11 @@ pub const Taxonomy = struct {
             entry.value_ptr.deinit();
         }
 
+        var tag_set_iterator = self.eco_repo_to_tag_map.iterator();
+        while (tag_set_iterator.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
+
         self.parent_to_child_map.deinit();
         self.eco_to_repo_map.deinit();
         self.tag_ids.deinit();
@@ -110,6 +119,7 @@ pub const Taxonomy = struct {
         self.repo_id_to_url_map.deinit();
         self.repo_to_eco_map.deinit();
         self.eco_id_to_name_map.deinit();
+        self.eco_repo_to_tag_map.deinit();
 
         for (self.buffers.items) |buf| {
             self.allocator.free(buf);
@@ -208,7 +218,7 @@ pub const Taxonomy = struct {
             .eco_count = self.eco_ids.count(),
             .repo_count = self.repo_ids.count(),
             .eco_connections_count = 0,
-            .tag_count = 0,
+            .tag_count = self.tag_ids.count(),
         };
     }
 
@@ -321,7 +331,7 @@ pub const Taxonomy = struct {
     }
 
     //tags: ?[][]const u8) {
-    fn addRepo(self: *Taxonomy, eco_name: []const u8, repo_url: []const u8) !void {
+    fn addRepo(self: *Taxonomy, eco_name: []const u8, repo_url: []const u8, tags_: ?[]?[]const u8) !void {
         const eco_id = self.eco_ids.get(eco_name) orelse return error.InvalidEcosystem;
         const repo_id_entry = try self.repo_ids.getOrPut(repo_url);
         if (!repo_id_entry.found_existing) {
@@ -334,10 +344,28 @@ pub const Taxonomy = struct {
         //_ = repo_id;
         const repos_for_eco_entry = try self.eco_to_repo_map.getOrPut(eco_id);
         if (!repos_for_eco_entry.found_existing) {
-            repos_for_eco_entry.value_ptr.* = RepoToTagMap.init(self.allocator);
+            repos_for_eco_entry.value_ptr.* = RepoSet.init(self.allocator);
         }
-        var repo_to_tag_map = repos_for_eco_entry.value_ptr;
-        try repo_to_tag_map.putNoClobber(repo_id, IdSet.init(self.allocator));
+        var repo_set = repos_for_eco_entry.value_ptr;
+        try repo_set.putNoClobber(repo_id, {});
+        if (tags_) |tags| {
+            for (tags) |tag| {
+                const tag_entry = try self.tag_ids.getOrPut(tag.?);
+                if (!tag_entry.found_existing) {
+                    self.tag_auto_id += 1;
+                    tag_entry.value_ptr.* = self.tag_auto_id;
+                }
+                const tag_id = tag_entry.value_ptr.*;
+                const key: EcoTagKey = .{ .eco_id = eco_id, .repo_id = repo_id };
+                const tag_map_entry = try self.eco_repo_to_tag_map.getOrPut(key);
+                if (!tag_map_entry.found_existing) {
+                    tag_map_entry.value_ptr.* = IdSet.init(self.allocator);
+                }
+                const tag_set = tag_map_entry.value_ptr;
+                try tag_set.putNoClobber(tag_id, {});
+                std.debug.print("Tag: {s}\n", .{tag.?});
+            }
+        }
     }
 
     fn moveRepo(self: *Taxonomy, src: []const u8, dst: []const u8) !void {
@@ -431,7 +459,8 @@ fn repAdd(remainder: []const u8, db: *Taxonomy) !void {
     if (tokens[0] != null and tokens[1] != null) {
         const eco = tokens[0].?;
         const repo = tokens[1].?;
-        try db.addRepo(eco, repo);
+        const tags = if (token_count > 2) tokens[2..token_count] else null;
+        try db.addRepo(eco, repo, tags);
     }
 }
 

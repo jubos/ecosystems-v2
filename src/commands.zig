@@ -195,6 +195,7 @@ pub fn cmdValidate(gpa: std.mem.Allocator, options: RunOptions) !void {
     try std.io.getStdOut().writer().print("{s}┃{s} {d:<6} Migrations\n", .{ magenta, reset, stats.migration_count });
     try std.io.getStdOut().writer().print("{s}┃{s} {d:<6} Ecosystems\n", .{ magenta, reset, stats.eco_count });
     try std.io.getStdOut().writer().print("{s}┃{s} {d:<6} Repos\n", .{ magenta, reset, stats.repo_count });
+    try std.io.getStdOut().writer().print("{s}┃{s} {d:<6} Tags\n", .{ magenta, reset, stats.tag_count });
 }
 
 fn defaultMigrationsPath(a: std.mem.Allocator) ![]const u8 {
