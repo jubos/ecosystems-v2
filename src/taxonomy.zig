@@ -46,6 +46,19 @@ pub const Ecosystem = struct {
     }
 };
 
+pub const EcosystemRepoRowJson = struct {
+    const Self = @This();
+    eco_name: []const u8,
+    branch: []const []const u8,
+    repo_url: []const u8,
+    tags: []const []const u8,
+
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        allocator.free(self.branch);
+        allocator.free(self.tags);
+    }
+};
+
 pub const EcosystemJson = struct {
     name: []const u8,
     //sub_ecosystems: [][]const u8,
@@ -68,6 +81,7 @@ pub const Taxonomy = struct {
     eco_ids: SliceIdMap,
     repo_ids: SliceIdMap,
     tag_ids: SliceIdMap,
+    tag_id_to_name_map: IdSliceMap,
     repo_id_to_url_map: IdSliceMap,
     eco_id_to_name_map: IdSliceMap,
     eco_to_repo_map: EcoToRepoMap,
@@ -86,6 +100,7 @@ pub const Taxonomy = struct {
             .eco_ids = SliceIdMap.init(allocator),
             .repo_ids = SliceIdMap.init(allocator),
             .tag_ids = SliceIdMap.init(allocator),
+            .tag_id_to_name_map = IdSliceMap.init(allocator),
             .parent_to_child_map = ParentToChildMap.init(allocator),
             .eco_to_repo_map = EcoToRepoMap.init(allocator),
             .repo_to_eco_map = RepoToEcoMap.init(allocator),
@@ -114,6 +129,7 @@ pub const Taxonomy = struct {
         self.parent_to_child_map.deinit();
         self.eco_to_repo_map.deinit();
         self.tag_ids.deinit();
+        self.tag_id_to_name_map.deinit();
         self.eco_ids.deinit();
         self.repo_ids.deinit();
         self.repo_id_to_url_map.deinit();
@@ -165,7 +181,7 @@ pub const Taxonomy = struct {
         const fba_allocator = fba.allocator();
         for (migration_files.items) |filename| {
             fba.reset();
-            const full_path = try std.fs.path.join(fba_allocator, &[_][]const u8{ root, filename });
+            const full_path = try std.fs.path.join(fba_allocator, &.{ root, filename });
             try self.loadFile(full_path);
             self.migration_count += 1;
         }
@@ -222,43 +238,99 @@ pub const Taxonomy = struct {
         };
     }
 
-    pub fn exportJson(self: *Taxonomy, output_file: []const u8) !void {
+    fn tagStringsForEcoRepo(self: *Taxonomy, a: std.mem.Allocator, eco_id: u32, repo_id: u32) !?[][]const u8 {
+        const key: EcoTagKey = .{ .eco_id = eco_id, .repo_id = repo_id };
+        if (self.eco_repo_to_tag_map.get(key)) |tag_ids| {
+            const tag_strs = try a.alloc([]const u8, tag_ids.count());
+            var i: u32 = 0;
+            var tag_id_it = tag_ids.keyIterator();
+            while (tag_id_it.next()) |tag_id| {
+                const tag_str = self.tag_id_to_name_map.get(tag_id.*).?;
+                tag_strs[i] = tag_str;
+                i += 1;
+            }
+            return tag_strs;
+        } else {
+            return null;
+        }
+    }
+
+    fn emitEcosystemJson(self: *Taxonomy, writer: anytype, eco_name: []const u8, eco_id: u32) !void {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        const allocator = arena.allocator();
 
+        const RepoTuple = struct { id: u32, url: []const u8 };
+
+        const allocator = arena.allocator();
+        const repo_ids = self.eco_to_repo_map.get(eco_id);
+        const repo_tuples = if (repo_ids) |ids| ok: {
+            const repo_tuples = try allocator.alloc(RepoTuple, ids.count());
+            var repo_id_it = ids.keyIterator();
+            var i: u32 = 0;
+            while (repo_id_it.next()) |repo_id| {
+                repo_tuples[i] = .{
+                    .id = repo_id.*,
+                    .url = self.repo_id_to_url_map.get(repo_id.*).?,
+                };
+                i += 1;
+            }
+            const lessThanLowercaseTuple = struct {
+                fn inner(_: void, a: RepoTuple, b: RepoTuple) bool {
+                    return std.ascii.lessThanIgnoreCase(a.url, b.url);
+                }
+            }.inner;
+            std.mem.sort(RepoTuple, repo_tuples, {}, lessThanLowercaseTuple);
+            break :ok repo_tuples;
+        } else ko: {
+            break :ko &[_]RepoTuple{};
+        };
+
+        for (repo_tuples) |tup| {
+            const tag_strs = try self.tagStringsForEcoRepo(allocator, eco_id, tup.id);
+            const row = EcosystemRepoRowJson{
+                .eco_name = eco_name,
+                .branch = &[_][]const u8{},
+                .repo_url = tup.url,
+                .tags = tag_strs orelse &[_][]const u8{},
+            };
+            var json_string = std.ArrayList(u8).init(allocator);
+            const json_writer = json_string.writer();
+            try std.json.stringify(row, .{}, json_writer);
+
+            try writer.print("{s}\n", .{json_string.items});
+        }
+    }
+
+    pub fn exportJson(self: *Taxonomy, output_file: []const u8) !void {
         const file = try std.fs.cwd().createFile(output_file, .{ .read = false, .truncate = true });
         defer file.close();
 
         var buffered_writer = std.io.bufferedWriter(file.writer());
         const writer = buffered_writer.writer();
 
+        const KeyPair = struct { eco_name: []const u8, eco_id: u32 };
+
+        var keys_list = try std.ArrayList(KeyPair).initCapacity(self.allocator, self.eco_ids.count());
+        defer keys_list.deinit();
+
         var iterator = self.eco_ids.iterator();
         while (iterator.next()) |entry| {
-            const repo_ids = self.eco_to_repo_map.get(entry.value_ptr.*);
-            const repo_urls = if (repo_ids) |ids| ok: {
-                const repo_urls = try allocator.alloc([]const u8, ids.count());
-                var repo_id_it = ids.keyIterator();
-                var i: u32 = 0;
-                while (repo_id_it.next()) |repo_id| {
-                    repo_urls[i] = self.repo_id_to_url_map.get(repo_id.*).?;
-                    i += 1;
+            try keys_list.append(.{ .eco_name = entry.key_ptr.*, .eco_id = entry.value_ptr.* });
+        }
+
+        std.mem.sort(
+            KeyPair,
+            keys_list.items,
+            {},
+            struct {
+                fn lessThan(_: void, a: KeyPair, b: KeyPair) bool {
+                    return std.ascii.lessThanIgnoreCase(a.eco_name, b.eco_name);
                 }
-                std.mem.sort([]const u8, repo_urls, {}, lessThanLowercase);
-                break :ok repo_urls;
-            } else ko: {
-                break :ko &[_][]const u8{};
-            };
+            }.lessThan,
+        );
 
-            const ecosystem = EcosystemJson{
-                .name = entry.key_ptr.*,
-                .repos = repo_urls,
-            };
-            var json_string = std.ArrayList(u8).init(allocator);
-            const json_writer = json_string.writer();
-            try std.json.stringify(ecosystem, .{}, json_writer);
-
-            try writer.print("{s}\n", .{json_string.items});
+        for (keys_list.items) |item| {
+            try self.emitEcosystemJson(writer, item.eco_name, item.eco_id);
         }
 
         try buffered_writer.flush();
@@ -353,6 +425,7 @@ pub const Taxonomy = struct {
                 if (!tag_entry.found_existing) {
                     self.tag_auto_id += 1;
                     tag_entry.value_ptr.* = self.tag_auto_id;
+                    try self.tag_id_to_name_map.putNoClobber(self.tag_auto_id, tag.?);
                 }
                 const tag_id = tag_entry.value_ptr.*;
                 const key: EcoTagKey = .{ .eco_id = eco_id, .repo_id = repo_id };
@@ -509,7 +582,7 @@ fn setupTestFixtures(testDir: []const u8) !Taxonomy {
     const build_dir = try findBuildZigDirAlloc(a);
     defer a.free(build_dir);
 
-    const tests_path = try std.fs.path.join(a, &[_][]const u8{ build_dir, "tests", testDir });
+    const tests_path = try std.fs.path.join(a, &.{ build_dir, "tests", testDir });
     defer a.free(tests_path);
 
     var db = Taxonomy.init(a);
@@ -620,4 +693,38 @@ test "ecosystem rename" {
 
     const elrond = try db.eco("Elrond");
     try testing.expectEqual(null, elrond);
+}
+
+test "json export" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    var db = try setupTestFixtures("tiered");
+    defer db.deinit();
+
+    var multi = (try db.eco("Bitcoin")).?;
+    defer multi.deinit(a);
+    try testing.expectEqual(1, multi.sub_ecosystems.len);
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const dir_path = try tmp.dir.realpathAlloc(a, ".");
+    defer a.free(dir_path);
+
+    const file_path = try std.fs.path.join(a, &.{ dir_path, "export.json" });
+    defer a.free(file_path);
+
+    try db.exportJson(file_path);
+
+    const content = try tmp.dir.readFileAlloc(testing.allocator, file_path, std.math.maxInt(usize));
+    defer testing.allocator.free(content);
+
+    const expected =
+        \\{"eco_name":"Bitcoin","branch":[],"repo_url":"https://github.com/bitcoin/bitcoin","tags":["#protocol"]}
+        \\{"eco_name":"Lightning","branch":[],"repo_url":"https://github.com/lightningnetwork/lnd","tags":["#protocol"]}
+        \\{"eco_name":"Lightspark","branch":[],"repo_url":"https://github.com/lightsparkdev/lightspark-rs","tags":["#sdk"]}
+        \\
+    ;
+
+    try testing.expectEqualStrings(expected, content);
 }
