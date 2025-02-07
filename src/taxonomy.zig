@@ -512,7 +512,6 @@ fn ecoCon(sub_line: []const u8, db: *Taxonomy) !void {
     if (tokens[0] != null and tokens[1] != null) {
         const parent = tokens[0].?;
         const child = tokens[1].?;
-        //std.debug.print("Connecting {s} to {s}\n", .{ parent, child });
         try db.connectEco(parent, child);
     }
 }
@@ -528,7 +527,6 @@ fn ecoDis(sub_line: []const u8, db: *Taxonomy) !void {
     if (tokens[0] != null and tokens[1] != null) {
         const parent = tokens[0].?;
         const child = tokens[1].?;
-        //std.debug.print("Connecting {s} to {s}\n", .{ parent, child });
         try db.connectEco(parent, child);
     }
 }
