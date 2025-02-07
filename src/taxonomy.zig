@@ -293,11 +293,8 @@ pub const Taxonomy = struct {
                 .repo_url = tup.url,
                 .tags = tag_strs orelse &[_][]const u8{},
             };
-            var json_string = std.ArrayList(u8).init(allocator);
-            const json_writer = json_string.writer();
-            try std.json.stringify(row, .{}, json_writer);
-
-            try writer.print("{s}\n", .{json_string.items});
+            try std.json.stringify(row, .{}, writer);
+            try writer.print("\n", .{});
         }
     }
 
