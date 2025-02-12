@@ -10,12 +10,13 @@ const AutoHashMap = std.hash_map.AutoHashMap;
 const SliceIdMap = HashMap([]const u8, u32, std.hash_map.StringContext, std.hash_map.default_max_load_percentage);
 const IdSliceMap = AutoHashMap(u32, []const u8);
 
-const EcoTagKey = struct { eco_id: u32, repo_id: u32 };
 const IdSet = AutoHashMap(u32, void);
 const RepoSet = AutoHashMap(u32, void);
 const EcoToRepoMap = AutoHashMap(u32, RepoSet);
 const RepoToEcoMap = AutoHashMap(u32, u32);
 const ParentToChildMap = AutoHashMap(u32, IdSet);
+
+const EcoTagKey = struct { eco_id: u32, repo_id: u32 };
 const EcoRepoToTagMap = AutoHashMap(EcoTagKey, IdSet);
 
 pub const TaxonomyStats = struct {
@@ -214,6 +215,8 @@ pub const Taxonomy = struct {
                 try repMov(remainder, self);
             } else if (std.mem.eql(u8, keyword, "ecomov")) {
                 try ecoMov(remainder, self);
+            } else if (std.mem.eql(u8, keyword, "reprem")) {
+                try repRem(remainder, self);
             }
         }
     }
@@ -425,7 +428,6 @@ pub const Taxonomy = struct {
         } else {}
         const repo_id = repo_id_entry.value_ptr.*;
 
-        //_ = repo_id;
         const repos_for_eco_entry = try self.eco_to_repo_map.getOrPut(eco_id);
         if (!repos_for_eco_entry.found_existing) {
             repos_for_eco_entry.value_ptr.* = RepoSet.init(self.allocator);
@@ -447,7 +449,7 @@ pub const Taxonomy = struct {
                     tag_map_entry.value_ptr.* = IdSet.init(self.allocator);
                 }
                 const tag_set = tag_map_entry.value_ptr;
-                try tag_set.putNoClobber(tag_id, {});
+                try tag_set.put(tag_id, {});
             }
         }
     }
@@ -470,6 +472,20 @@ pub const Taxonomy = struct {
         _ = self.eco_ids.remove(src);
         try self.eco_id_to_name_map.put(src_id, dst);
         try self.eco_ids.put(dst, src_id);
+    }
+
+    fn removeRepoFromEcosystem(self: *Taxonomy, eco_name: []const u8, repo: []const u8) !void {
+        const eco_id = self.eco_ids.get(eco_name) orelse return error.InvalidEcosystem;
+        var repos_for_eco = self.eco_to_repo_map.getPtr(eco_id) orelse return error.EcosystemHasNoRepos;
+        const repo_id = self.repo_ids.get(repo) orelse return error.InvalidRepo;
+        _ = repos_for_eco.remove(repo_id);
+
+        const key: EcoTagKey = .{ .eco_id = eco_id, .repo_id = repo_id };
+        const tagMapPtr_ = self.eco_repo_to_tag_map.getPtr(key);
+        if (tagMapPtr_) |tagMapPtr| {
+            tagMapPtr.deinit();
+            _ = self.eco_repo_to_tag_map.remove(key);
+        }
     }
 };
 
@@ -572,6 +588,20 @@ fn ecoMov(remainder: []const u8, db: *Taxonomy) !void {
         const src = tokens[0].?;
         const dst = tokens[1].?;
         try db.moveEco(src, dst);
+    }
+}
+
+fn repRem(remainder: []const u8, db: *Taxonomy) !void {
+    var tokens: [2]?[]const u8 = undefined;
+    const token_count = try shlex.split(remainder, &tokens);
+    if (token_count != 2) {
+        return error.RepRemRequiresExactlyTwoParameters;
+    }
+
+    if (tokens[0] != null and tokens[1] != null) {
+        const eco = tokens[0].?;
+        const repo = tokens[1].?;
+        try db.removeRepoFromEcosystem(eco, repo);
     }
 }
 
@@ -704,6 +734,22 @@ test "ecosystem rename" {
 
     const elrond = try db.eco("Elrond");
     try testing.expectEqual(null, elrond);
+}
+
+test "repo removals" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    var db = try setupTestFixtures("repo_removals");
+    defer db.deinit();
+    const stats = db.stats();
+
+    try testing.expectEqual(2, stats.migration_count);
+    try testing.expectEqual(2, stats.eco_count);
+    try testing.expectEqual(6, stats.repo_count);
+
+    var eth = (try db.eco("Ethereum")).?;
+    defer eth.deinit(a);
+    try testing.expectEqual(1, eth.repos.len);
 }
 
 test "json export" {
