@@ -134,7 +134,8 @@ pub const Taxonomy = struct {
         self.buffers.deinit();
     }
 
-    pub fn load(self: *Taxonomy, root: []const u8) !void {
+    /// The max_date parameter filters out any migrations that occur after a particular date.
+    pub fn load(self: *Taxonomy, root: []const u8, max_date_: ?[]const u8) !void {
         var dir = try std.fs.cwd().openDir(root, .{ .iterate = true });
         defer dir.close();
 
@@ -155,7 +156,15 @@ pub const Taxonomy = struct {
             if (entry.kind == std.fs.File.Kind.file) {
                 const name = try self.allocator.dupe(u8, entry.name);
                 if (timestamp.hasValidTimestamp(name)) {
-                    try migration_files.append(name);
+                    if (max_date_) |max_date| {
+                        if (std.mem.lessThan(u8, name, max_date)) {
+                            try migration_files.append(name);
+                        } else {
+                            self.allocator.free(name);
+                        }
+                    } else {
+                        try migration_files.append(name);
+                    }
                 } else {
                     self.allocator.free(name);
                 }
@@ -618,16 +627,22 @@ fn lessThanLowercase(_: void, a: []const u8, b: []const u8) bool {
 }
 
 /// Tests Below
-fn setupTestFixtures(testDir: []const u8) !Taxonomy {
-    const a = std.testing.allocator;
+fn getTestsPath(a: std.mem.Allocator, testDir: []const u8) ![]u8 {
     const build_dir = try findBuildZigDirAlloc(a);
     defer a.free(build_dir);
 
     const tests_path = try std.fs.path.join(a, &.{ build_dir, "tests", testDir });
+    return tests_path;
+}
+
+fn setupTestFixtures(testDir: []const u8) !Taxonomy {
+    const a = std.testing.allocator;
+    const tests_path = try getTestsPath(a, testDir);
+
     defer a.free(tests_path);
 
     var db = Taxonomy.init(a);
-    try db.load(tests_path);
+    try db.load(tests_path, null);
 
     return db;
 }
@@ -750,6 +765,43 @@ test "repo removals" {
     var eth = (try db.eco("Ethereum")).?;
     defer eth.deinit(a);
     try testing.expectEqual(1, eth.repos.len);
+}
+
+test "date filtering" {
+    const testing = std.testing;
+    const a = testing.allocator;
+
+    const tests_path = try getTestsPath(a, "date_filtering");
+    defer a.free(tests_path);
+
+    // try db.load(tests_path, "2011");
+    {
+        var db = Taxonomy.init(a);
+        try db.load(tests_path, "2011");
+        defer db.deinit();
+
+        const stats = db.stats();
+        try testing.expectEqual(1, stats.migration_count);
+        try testing.expectEqual(1, stats.eco_count);
+    }
+    {
+        var db = Taxonomy.init(a);
+        try db.load(tests_path, "2013");
+        defer db.deinit();
+
+        const stats = db.stats();
+        try testing.expectEqual(2, stats.migration_count);
+        try testing.expectEqual(2, stats.eco_count);
+    }
+    {
+        var db = Taxonomy.init(a);
+        try db.load(tests_path, "2015-08-01");
+        defer db.deinit();
+
+        const stats = db.stats();
+        try testing.expectEqual(3, stats.migration_count);
+        try testing.expectEqual(3, stats.eco_count);
+    }
 }
 
 test "json export" {

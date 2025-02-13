@@ -22,10 +22,12 @@ const CommandError = error{
 const RunOptions = struct {
     help: bool = false,
     root: ?[]const u8 = null,
+    max_date: ?[]const u8 = null,
     output: ?[]const u8 = null,
 
     // Validation flags to prevent duplicates
     root_seen: bool = false,
+    max_date_seen: bool = false,
     output_seen: bool = false,
 };
 
@@ -46,6 +48,8 @@ fn printUsage() !void {
         \\  export                   Export the taxonomy to a json file
         \\      -r, --root DIR       The direction containing the migrations file (default ./migrations)
         \\      -e, --ecosystem STR  The name of an ecosystem if you only want to export one
+        \\      -m, --max-date STR   The maximum date to run migrations until.
+        \\                           One can export the taxonomy state at specific past dates with this param.
         \\      <output>             The output file
         \\
         \\  help                     Show this help message
@@ -80,6 +84,19 @@ fn parseRunOptions(command: Command, args: []const []const u8) CommandError!RunO
             if (std.mem.startsWith(u8, root_path, "-")) return CommandError.InvalidOption;
 
             options.root = root_path;
+            i += 2;
+        } else if (eql(u8, arg, "-m") or eql(u8, arg, "--max-date")) {
+            if (options.max_date_seen) return CommandError.DuplicateOption;
+            options.max_date_seen = true;
+
+            if (i + 1 >= args.len) return CommandError.MissingArgument;
+            const max_date = args[i + 1];
+
+            // Check for empty max_date or if it starts with a dash
+            if (max_date.len == 0) return CommandError.EmptyOptionValue;
+            if (std.mem.startsWith(u8, max_date, "-")) return CommandError.InvalidOption;
+
+            options.max_date = max_date;
             i += 2;
         } else if (std.mem.startsWith(u8, arg, "-")) {
             return CommandError.InvalidOption;
@@ -184,7 +201,7 @@ pub fn cmdValidate(gpa: std.mem.Allocator, options: RunOptions) !void {
     const root = options.root orelse default_dir;
     var taxonomy = db.Taxonomy.init(gpa);
     defer taxonomy.deinit();
-    const load_result = try taxonomy.load(root);
+    const load_result = try taxonomy.load(root, null);
     _ = load_result;
 
     const stats = taxonomy.stats();
@@ -209,7 +226,7 @@ pub fn cmdExport(gpa: std.mem.Allocator, options: RunOptions) !void {
     const root = options.root orelse default_dir;
     var taxonomy = db.Taxonomy.init(gpa);
     defer taxonomy.deinit();
-    const load_result = try taxonomy.load(root);
+    const load_result = try taxonomy.load(root, options.max_date);
     _ = load_result;
     if (options.output) |output| {
         try taxonomy.exportJson(output);
