@@ -110,11 +110,11 @@ detect_platform
 # Build function
 setup() {
     if [ -z "${SYSTEM_ZIG_EXEC:x}" ]; then
-        echo "Setting up build system for $PLATFORM..."
         ZIG_FILE_ROOT="zig-${PLATFORM}-${ZIG_VERSION}"
         ZIG_PACKAGE="toolchains/${ZIG_FILE_ROOT}.tar.xz"
         mkdir -p .tcache
         if [ ! -f ".tcache/$ZIG_FILE_ROOT/zig" ]; then
+            echo "Setting up build system for $PLATFORM..."
             tar -xf "${ZIG_PACKAGE}" -C .tcache
         fi
         ZIG_EXEC=".tcache/${ZIG_FILE_ROOT}/zig"
@@ -130,26 +130,30 @@ if [ ! -f "$ZIG_EXEC" ] || [ ! -x "$ZIG_EXEC" ]; then
     exit 1
 fi
 
+build() {
+    $ZIG_EXEC build -Doptimize=ReleaseFast
+}
+
 validate() {
-    $ZIG_EXEC build run -- validate
+    $ZIG_EXEC build -Doptimize=ReleaseFast run -- validate
 }
 
 export_taxonomy() {
-    $ZIG_EXEC build run -- export "${@}"
+    $ZIG_EXEC build -Doptimize=ReleaseFast run -- export "${@}"
 }
 
 test() {
-    $ZIG_EXEC build test --summary all
+    $ZIG_EXEC build -Doptimize=ReleaseFast test --summary all
 }
 
 help() {
-    $ZIG_EXEC build run -- help
+    $ZIG_EXEC build -Doptimize=ReleaseFast run -- help
 }
 
 # Main script logic
 case "$1" in
     "build")
-        $ZIG_EXEC build
+        build
         ;;
     "validate")
         validate "$@"
