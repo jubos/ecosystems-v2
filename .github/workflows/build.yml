@@ -28,7 +28,7 @@ jobs:
       - name: Generate hash of core files
         id: hash
         run: |
-          echo "files_hash=$(find src/ -type f \( -name "*.zig" -o -name "*.sh" \) | sort | xargs sha1sum | sha1sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+          echo "files_hash=$(find . -maxdepth 2 -name "run.sh" -o -path "./src/*" \( -name "*.zig" -o -name "*.sh" \) | sort | xargs sha1sum | sha1sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
       - name: Cache build artifacts
         id: cache
