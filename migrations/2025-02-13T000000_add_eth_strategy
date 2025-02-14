@@ -1,0 +1,3 @@
+ecoadd EthStrategy
+ecocon Ethereum EthStrategy
+repadd EthStrategy https://github.com/dangerousfood/ethstrategy
