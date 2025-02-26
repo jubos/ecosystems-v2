@@ -2,19 +2,37 @@
 
 [MIT license with attribution](https://github.com/electric-capital/crypto-ecosystems/blob/master/LICENSE)
 
-🌲 Crypto Ecosystems is a taxonomy for sharing data around open source blockchain, Web3, cryptocurrency, and decentralized ecosystems and tying them to GitHub organizations and code repositories.
+🌲 Crypto Ecosystems is a taxonomy of open source blockchain, Web3, cryptocurrency, and decentralized ecosystems and tying them to GitHub organizations and code repositories.
 
 This repository is not complete, and hopefully it never is as there are new ecosystems and repositories created every day.
 
 # How to use this taxonomy
-The taxonomy can be used to generate the set of crypto ecosystems, their corresponding sub ecosystems, and repositories for a particular timestamp.
+The taxonomy can be used to generate the set of crypto ecosystems, their corresponding sub ecosystems, and repositories at a particular time.
 
-## How to Contribute
+## How to update the taxonomy
+There is a domain specific language (DSL) containing the keywords that can make changes to the taxonomy.  You specify migrations by using files of the format
+```bash
+migrations/YYYY-DD-MMTHHMMDD_description_of_your_migration
+```
 
-### Option 1: Generate a migration
-Migrations change the data in the taxonomy in the following ways:
+Some examples migration files:
+```bash
+migrations/2009-01-03T181500_add_bitcoin
+migrations/2015-07-30T152613_add_ethereum
+```
 
 #### Data Format
+
+#### Example: Adding an ecosystem
+```bash
+# Add ecosystems with the ecoadd keyword.  Comments are allowed with the # character.
+ecoadd Lightning
+# Add repos to ecosystems using the repadd keyword
+repadd Lightning https://github.com/lightningnetwork/lnd #protocol
+# Connect ecosystems using the ecocon keyword.
+# The following connects Lighting as a sub ecosystem of Bitcoin.
+ecocon Bitcoin Lighting
+```
 
 ### Option 2: Complete the Ecosystem Submission form
 
