@@ -423,8 +423,8 @@ pub const Taxonomy = struct {
         const parent_id = self.eco_ids.get(parent) orelse return error.InvalidParentEcosystem;
         const child_id = self.eco_ids.get(child) orelse return error.InvalidChildEcosystem;
 
-        const child_set = self.parent_to_child_map.get(parent_id) orelse return error.ParentEcosystemHasNoChildren;
-        child_set.remove(child_id);
+        var child_set = self.parent_to_child_map.getPtr(parent_id) orelse return error.ParentEcosystemHasNoChildren;
+        _ = child_set.remove(child_id);
     }
 
     fn addRepo(self: *Taxonomy, eco_name: []const u8, repo_url: []const u8, tags_: ?[]?[]const u8) !void {
@@ -552,7 +552,7 @@ fn ecoDis(sub_line: []const u8, db: *Taxonomy) !void {
     if (tokens[0] != null and tokens[1] != null) {
         const parent = tokens[0].?;
         const child = tokens[1].?;
-        try db.connectEco(parent, child);
+        try db.disconnectEco(parent, child);
     }
 }
 
@@ -730,6 +730,10 @@ test "ecosystem disconnect" {
     defer poly.deinit(a);
     try testing.expectEqual(1, poly.sub_ecosystems.len);
     try testing.expectEqualStrings("DeGods", poly.sub_ecosystems[0]);
+    var solana = (try db.eco("Solana")).?;
+    defer solana.deinit(a);
+
+    try testing.expectEqual(0, solana.sub_ecosystems.len);
 }
 
 test "ecosystem rename" {
