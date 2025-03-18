@@ -3,7 +3,7 @@
 # Exit on error
 set -e
 
-ZIG_VERSION="0.14.0-dev.2802+257054a14"
+ZIG_VERSION="0.14.0"
 NEWLINE=$'\n'
 
 print_usage() {
@@ -91,9 +91,8 @@ detect_platform() {
             echo "$os-$arch is unsupported with the embedded build system."
             echo ""
             echo "Please use an architecture of the following:"
-            echo "    - windows-x86_64"
-            echo "    - macos-aarch64"
             echo "    - linux-x86_64"
+            echo "    - macos-aarch64"
             echo ""
             echo "Or if you can run your own compiler do the following:"
             echo "1/ Download a zig compiler with a version > 0.14.0 here: https://ziglang.org/download/"
