@@ -143,7 +143,8 @@ pub const Taxonomy = struct {
         self.buffers.deinit();
     }
 
-    /// The max_date parameter filters out any migrations that occur after a particular date.
+    /// The max_date parameter filters out any migrations that occur after a
+    /// particular date.
     pub fn load(self: *Taxonomy, root: []const u8, max_date_: ?[]const u8) !void {
         var dir = try std.fs.cwd().openDir(root, .{ .iterate = true });
         defer dir.close();
@@ -420,7 +421,8 @@ pub const Taxonomy = struct {
         }
     }
 
-    /// Connecting an eco creates an entry in both the parent -> child_set map and the child -> parent_set map for book keeping
+    /// Connecting an eco creates an entry in both the parent -> child_set map
+    /// and the child -> parent_set map for book keeping
     fn connectEco(self: *Taxonomy, parent: []const u8, child: []const u8) !void {
         const parent_id = self.eco_ids.get(parent) orelse return error.InvalidParentEcosystem;
         const child_id = self.eco_ids.get(child) orelse return error.InvalidChildEcosystem;
@@ -869,7 +871,6 @@ test "date filtering" {
     const tests_path = try getTestsPath(a, "date_filtering");
     defer a.free(tests_path);
 
-    // try db.load(tests_path, "2011");
     {
         var db = Taxonomy.init(a);
         try db.load(tests_path, "2011");
