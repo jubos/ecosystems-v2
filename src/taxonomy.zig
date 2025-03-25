@@ -3,6 +3,7 @@ const shlex = @import("./shlex.zig");
 const timestamp = @import("./timestamp.zig");
 const print = std.debug.print;
 
+const assert = std.debug.assert;
 const ArrayList = std.ArrayList;
 const HashMap = std.hash_map.HashMap;
 const AutoHashMap = std.hash_map.AutoHashMap;
@@ -15,6 +16,7 @@ const RepoSet = AutoHashMap(u32, void);
 const EcoToRepoMap = AutoHashMap(u32, RepoSet);
 const RepoToEcoMap = AutoHashMap(u32, u32);
 const ParentToChildMap = AutoHashMap(u32, IdSet);
+const ChildToParentMap = AutoHashMap(u32, IdSet);
 
 const EcoTagKey = struct { eco_id: u32, repo_id: u32 };
 const EcoRepoToTagMap = AutoHashMap(EcoTagKey, IdSet);
@@ -78,6 +80,7 @@ pub const Taxonomy = struct {
     eco_to_repo_map: EcoToRepoMap,
     repo_to_eco_map: RepoToEcoMap,
     parent_to_child_map: ParentToChildMap,
+    child_to_parent_map: ChildToParentMap,
     eco_repo_to_tag_map: EcoRepoToTagMap,
 
     pub fn init(allocator: std.mem.Allocator) Taxonomy {
@@ -93,6 +96,7 @@ pub const Taxonomy = struct {
             .tag_ids = SliceIdMap.init(allocator),
             .tag_id_to_name_map = IdSliceMap.init(allocator),
             .parent_to_child_map = ParentToChildMap.init(allocator),
+            .child_to_parent_map = ChildToParentMap.init(allocator),
             .eco_to_repo_map = EcoToRepoMap.init(allocator),
             .repo_to_eco_map = RepoToEcoMap.init(allocator),
             .repo_id_to_url_map = IdSliceMap.init(allocator),
@@ -111,6 +115,10 @@ pub const Taxonomy = struct {
         while (p2c_iterator.next()) |entry| {
             entry.value_ptr.deinit();
         }
+        var c2p_iterator = self.child_to_parent_map.iterator();
+        while (c2p_iterator.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
 
         var tag_set_iterator = self.eco_repo_to_tag_map.iterator();
         while (tag_set_iterator.next()) |entry| {
@@ -118,6 +126,7 @@ pub const Taxonomy = struct {
         }
 
         self.parent_to_child_map.deinit();
+        self.child_to_parent_map.deinit();
         self.eco_to_repo_map.deinit();
         self.tag_ids.deinit();
         self.tag_id_to_name_map.deinit();
@@ -220,6 +229,8 @@ pub const Taxonomy = struct {
                 try ecoAdd(remainder, self);
             } else if (std.mem.eql(u8, keyword, "ecodis")) {
                 try ecoDis(remainder, self);
+            } else if (std.mem.eql(u8, keyword, "ecorem")) {
+                try ecoRem(remainder, self);
             } else if (std.mem.eql(u8, keyword, "repmov")) {
                 try repMov(remainder, self);
             } else if (std.mem.eql(u8, keyword, "ecomov")) {
@@ -409,6 +420,7 @@ pub const Taxonomy = struct {
         }
     }
 
+    /// Connecting an eco creates an entry in both the parent -> child_set map and the child -> parent_set map for book keeping
     fn connectEco(self: *Taxonomy, parent: []const u8, child: []const u8) !void {
         const parent_id = self.eco_ids.get(parent) orelse return error.InvalidParentEcosystem;
         const child_id = self.eco_ids.get(child) orelse return error.InvalidChildEcosystem;
@@ -417,6 +429,12 @@ pub const Taxonomy = struct {
             child_entry.value_ptr.* = IdSet.init(self.allocator);
         }
         try child_entry.value_ptr.put(child_id, {});
+
+        const parent_entry = try self.child_to_parent_map.getOrPut(child_id);
+        if (!parent_entry.found_existing) {
+            parent_entry.value_ptr.* = IdSet.init(self.allocator);
+        }
+        try parent_entry.value_ptr.put(parent_id, {});
     }
 
     fn disconnectEco(self: *Taxonomy, parent: []const u8, child: []const u8) !void {
@@ -425,6 +443,41 @@ pub const Taxonomy = struct {
 
         var child_set = self.parent_to_child_map.getPtr(parent_id) orelse return error.ParentEcosystemHasNoChildren;
         _ = child_set.remove(child_id);
+    }
+
+    fn removeEcoById(self: *Taxonomy, eco_id: u32) void {
+        const parent_set = self.child_to_parent_map.getPtr(eco_id);
+        if (parent_set) |ps| {
+            var parent_id_it = ps.keyIterator();
+            while (parent_id_it.next()) |parent_id| {
+                if (self.parent_to_child_map.getPtr(parent_id.*)) |child_set| {
+                    const removed = child_set.remove(eco_id);
+                    assert(removed);
+                }
+            }
+            ps.*.clearAndFree();
+            const removed = self.child_to_parent_map.remove(eco_id);
+            assert(removed);
+        }
+
+        if (self.parent_to_child_map.getPtr(eco_id)) |child_set| {
+            child_set.*.clearAndFree();
+            const removed = self.parent_to_child_map.remove(eco_id);
+            assert(removed);
+        }
+    }
+
+    /// The removal operation is a bit tricky.  It does the following
+    /// - removes the eco from its parents
+    /// - clears the repos from the ecosystem itself
+    /// - removes the children ecosystem connections (but leaves the children intact)
+    /// - destroys the ecosystem
+    fn removeEco(self: *Taxonomy, eco_name: []const u8) !void {
+        const eco_id = self.eco_ids.get(eco_name) orelse return error.InvalidEcosystem;
+        self.removeEcoById(eco_id);
+
+        const removed = self.eco_ids.remove(eco_name);
+        assert(removed);
     }
 
     fn addRepo(self: *Taxonomy, eco_name: []const u8, repo_url: []const u8, tags_: ?[]?[]const u8) !void {
@@ -553,6 +606,20 @@ fn ecoDis(sub_line: []const u8, db: *Taxonomy) !void {
         const parent = tokens[0].?;
         const child = tokens[1].?;
         try db.disconnectEco(parent, child);
+    }
+}
+
+/// Remove ecosystems
+fn ecoRem(sub_line: []const u8, db: *Taxonomy) !void {
+    var tokens: [1]?[]const u8 = undefined;
+    const token_count = try shlex.split(sub_line, &tokens);
+    if (token_count != 1) {
+        return error.EcoRemRequiresExactlyTwoParameters;
+    }
+
+    if (tokens[0] != null) {
+        const eco = tokens[0].?;
+        try db.removeEco(eco);
     }
 }
 
@@ -769,6 +836,30 @@ test "repo removals" {
     var eth = (try db.eco("Ethereum")).?;
     defer eth.deinit(a);
     try testing.expectEqual(1, eth.repos.len);
+}
+
+test "ecosystem removal" {
+    const testing = std.testing;
+    const a = testing.allocator;
+
+    var db = try setupTestFixtures("ecosystem_removal");
+    defer db.deinit();
+    const stats = db.stats();
+
+    try testing.expectEqual(1, stats.migration_count);
+    try testing.expectEqual(5, stats.eco_count);
+    try testing.expectEqual(2, stats.repo_count);
+
+    const me = try db.eco("Magic Eden");
+    try testing.expectEqual(null, me);
+
+    var btc = (try db.eco("Bitcoin")).?;
+    defer btc.deinit(a);
+    try testing.expectEqual(0, btc.sub_ecosystems.len);
+
+    var me_wallet = try db.eco("Magic Eden Wallet");
+    try testing.expect(me_wallet != null);
+    me_wallet.?.deinit(a);
 }
 
 test "date filtering" {
