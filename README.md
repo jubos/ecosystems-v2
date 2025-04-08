@@ -1,7 +1,5 @@
 # Crypto Ecosystems
 
-[MIT license with attribution](https://github.com/electric-capital/crypto-ecosystems/blob/master/LICENSE)
-
 🌲 Crypto Ecosystems is a taxonomy of open source blockchain, Web3, cryptocurrency, and decentralized ecosystems and tying them to GitHub organizations and code repositories.
 
 This repository is not complete, and hopefully it never is as there are new ecosystems and repositories created every day.
@@ -41,6 +39,8 @@ If you are not a developer or you find making a commit too difficult, you can us
 You can [visit the form here](https://airtable.com/shrN4vZMlBLm3Dap8), fill it, submit it and we'll take care of the rest :)
 
 ## How to Give Attribution For Usage of the Electric Capital Crypto Ecosystems
+
+The repository is licensed under [MIT license with attribution](https://github.com/electric-capital/crypto-ecosystems/blob/master/LICENSE).
 
 To use the Electric Capital Crypto Ecosystems Map in your project, you will need an attribution.
 
