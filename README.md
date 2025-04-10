@@ -9,7 +9,7 @@ The taxonomy can be used to generate the set of crypto ecosystems, their corresp
 ## How to update the taxonomy
 There is a domain specific language (DSL) containing the keywords that can make changes to the taxonomy.  You specify migrations by using files of the format
 ```bash
-migrations/YYYY-DD-MMTHHMMDD_description_of_your_migration
+migrations/YYYY-mm-DDTHHMMSS_description_of_your_migration
 ```
 
 
