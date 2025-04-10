@@ -1,6 +1,5 @@
-# Crypto Ecosystems
-
-🌲 Crypto Ecosystems is a taxonomy of open source blockchain, Web3, cryptocurrency, and decentralized ecosystems and tying them to GitHub organizations and code repositories.
+# 🌲 Crypto Ecosystems
+Crypto Ecosystems is a taxonomy of open source blockchain, Web3, cryptocurrency, and decentralized ecosystems and tying them to GitHub organizations and code repositories.
 
 This repository is not complete, and hopefully it never is as there are new ecosystems and repositories created every day.
 
@@ -13,31 +12,28 @@ There is a domain specific language (DSL) containing the keywords that can make 
 migrations/YYYY-DD-MMTHHMMDD_description_of_your_migration
 ```
 
+
 Some examples migration files:
 ```bash
 migrations/2009-01-03T181500_add_bitcoin
 migrations/2015-07-30T152613_add_ethereum
 ```
 
-#### Data Format
+Simply create your new migration and add changes to the taxonomy using the keywords discussed below.
 
-#### Example: Adding an ecosystem
-```bash
-# Add ecosystems with the ecoadd keyword.  Comments are allowed with the # character.
+### Data Format
+
+#### Example: Adding an ecosystem and connecting it.
+```lua
+-- Add ecosystems with the ecoadd keyword.  You can start a line with -- to denote a comment.
 ecoadd Lightning
-# Add repos to ecosystems using the repadd keyword
+-- Add repos to ecosystems using the repadd keyword
 repadd Lightning https://github.com/lightningnetwork/lnd #protocol
-# Connect ecosystems using the ecocon keyword.
-# The following connects Lighting as a sub ecosystem of Bitcoin.
+-- Connect ecosystems using the ecocon keyword.
+-- The following connects Lighting as a sub ecosystem of Bitcoin.
 ecocon Bitcoin Lighting
 ```
-
-### Option 2: Complete the Ecosystem Submission form
-
-If you are not a developer or you find making a commit too difficult, you can use this Airtable based alternative below.
-
-You can [visit the form here](https://airtable.com/shrN4vZMlBLm3Dap8), fill it, submit it and we'll take care of the rest :)
-
+  
 ## How to Give Attribution For Usage of the Electric Capital Crypto Ecosystems
 
 The repository is licensed under [MIT license with attribution](https://github.com/electric-capital/crypto-ecosystems/blob/master/LICENSE).
