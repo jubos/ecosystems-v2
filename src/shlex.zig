@@ -74,60 +74,6 @@ fn stripEscapes(input: []const u8) []const u8 {
     return result[0..j];
 }
 
-// pub fn split(line: []u8, tokens: []?[]const u8) !usize {
-//     var token_count: usize = 0;
-//     var i: usize = 0;
-//
-//     while (i < line.len and token_count < tokens.len) : (i += 1) {
-//         while (i < line.len and std.ascii.isWhitespace(line[i])) {
-//             i += 1;
-//         }
-//         if (i >= line.len) break;
-//
-//         if (line[i] == '"' or line[i] == '\'') {
-//             const quote = line[i];
-//             i += 1;
-//             const start = i;
-//             var j = i;
-//
-//             while (i < line.len and line[i] != quote) {
-//                 if (line[i] == '\\' and i + 1 < line.len) {
-//                     i += 1;
-//                     line[j] = line[i];
-//                 } else {
-//                     line[j] = line[i];
-//                 }
-//                 i += 1;
-//                 j += 1;
-//             }
-//
-//             if (i >= line.len) return error.UnterminatedQuote;
-//             tokens[token_count] = line[start..j];
-//             token_count += 1;
-//         } else {
-//             const start = i;
-//             var j = i;
-//
-//             while (i < line.len and !std.ascii.isWhitespace(line[i])) {
-//                 if (line[i] == '\\' and i + 1 < line.len) {
-//                     i += 1;
-//                     line[j] = line[i];
-//                 } else {
-//                     line[j] = line[i];
-//                 }
-//                 i += 1;
-//                 j += 1;
-//             }
-//
-//             tokens[token_count] = line[start..j];
-//             token_count += 1;
-//             i -= 1;
-//         }
-//     }
-//
-//     return token_count;
-// }
-
 test "basic tokenization" {
     var line_buf = "hello world test".*;
     var tokens: [4]?[]const u8 = .{null} ** 4;
