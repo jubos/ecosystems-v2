@@ -1,7 +1,0 @@
-ecoadd urani.trade
-repadd urani.trade https://github.com/urani-trade/solana-dev-onboarding-rs
-repadd urani.trade https://github.com/urani-trade/solana-mev-agent-py
-repadd urani.trade https://github.com/urani-trade/solana-mev-literature
-repadd urani.trade https://github.com/urani-trade/urani-arena-mvp-ts
-repadd urani.trade https://github.com/urani-trade/urani-orderbook-mvp-ts
-repadd urani.trade https://github.com/urani-trade/urani-swap-ts
