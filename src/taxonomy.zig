@@ -336,33 +336,42 @@ pub const Taxonomy = struct {
         }
     }
 
-    pub fn exportJson(self: *Taxonomy, output_file: []const u8) !void {
-        const file = try std.fs.cwd().createFile(output_file, .{ .read = false, .truncate = true });
-        defer file.close();
-
-        var buffered_writer = std.io.bufferedWriter(file.writer());
-        const writer = buffered_writer.writer();
-
+    /// param: ecosystem -- Specify a single ecosystem
+    pub fn exportJson(self: *Taxonomy, output_file: []const u8, ecosystem: ?[]const u8) !void {
         const KeyPair = struct { eco_name: []const u8, eco_id: u32 };
 
         var keys_list = try std.ArrayList(KeyPair).initCapacity(self.allocator, self.eco_ids.count());
         defer keys_list.deinit();
 
         var iterator = self.eco_ids.iterator();
-        while (iterator.next()) |entry| {
-            try keys_list.append(.{ .eco_name = entry.key_ptr.*, .eco_id = entry.value_ptr.* });
+        if (ecosystem) |only| {
+            const eco_id_pair = self.eco_ids.getEntry(only);
+            if (eco_id_pair) |eco_pair| {
+                try keys_list.append(.{ .eco_name = eco_pair.key_ptr.*, .eco_id = eco_pair.value_ptr.* });
+            } else {
+                return error.InvalidEcosystem;
+            }
+        } else {
+            while (iterator.next()) |entry| {
+                try keys_list.append(.{ .eco_name = entry.key_ptr.*, .eco_id = entry.value_ptr.* });
+            }
+            std.mem.sort(
+                KeyPair,
+                keys_list.items,
+                {},
+                struct {
+                    fn lessThan(_: void, a: KeyPair, b: KeyPair) bool {
+                        return std.ascii.lessThanIgnoreCase(a.eco_name, b.eco_name);
+                    }
+                }.lessThan,
+            );
         }
 
-        std.mem.sort(
-            KeyPair,
-            keys_list.items,
-            {},
-            struct {
-                fn lessThan(_: void, a: KeyPair, b: KeyPair) bool {
-                    return std.ascii.lessThanIgnoreCase(a.eco_name, b.eco_name);
-                }
-            }.lessThan,
-        );
+        const file = try std.fs.cwd().createFile(output_file, .{ .read = false, .truncate = true });
+        defer file.close();
+
+        var buffered_writer = std.io.bufferedWriter(file.writer());
+        const writer = buffered_writer.writer();
 
         var branch = ArrayList([]const u8).init(self.allocator);
         defer branch.deinit();
@@ -919,7 +928,7 @@ test "json export" {
     const file_path = try std.fs.path.join(a, &.{ dir_path, "export.json" });
     defer a.free(file_path);
 
-    try db.exportJson(file_path);
+    try db.exportJson(file_path, null);
 
     const content = try tmp.dir.readFileAlloc(testing.allocator, file_path, std.math.maxInt(usize));
     defer testing.allocator.free(content);
@@ -931,6 +940,36 @@ test "json export" {
         \\{"eco_name":"Lightning","branch":[],"repo_url":"https://github.com/lightningnetwork/lnd","tags":["#protocol"]}
         \\{"eco_name":"Lightning","branch":["Lightspark"],"repo_url":"https://github.com/lightsparkdev/lightspark-rs","tags":["#sdk"]}
         \\{"eco_name":"Lightspark","branch":[],"repo_url":"https://github.com/lightsparkdev/lightspark-rs","tags":["#sdk"]}
+        \\
+    ;
+
+    try testing.expectEqualStrings(expected, content);
+}
+
+// When emitting just the Lightning ecosystem it should show the lightning repos as well as the branch containing LightSpark
+test "json export of single ecosystem" {
+    const testing = std.testing;
+    const a = testing.allocator;
+    var db = try setupTestFixtures("tiered");
+    defer db.deinit();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const dir_path = try tmp.dir.realpathAlloc(a, ".");
+    defer a.free(dir_path);
+
+    const file_path = try std.fs.path.join(a, &.{ dir_path, "lightning.json" });
+    defer a.free(file_path);
+
+    try db.exportJson(file_path, "Lightning");
+
+    const content = try tmp.dir.readFileAlloc(testing.allocator, file_path, std.math.maxInt(usize));
+    defer testing.allocator.free(content);
+
+    const expected =
+        \\{"eco_name":"Lightning","branch":[],"repo_url":"https://github.com/lightningnetwork/lnd","tags":["#protocol"]}
+        \\{"eco_name":"Lightning","branch":["Lightspark"],"repo_url":"https://github.com/lightsparkdev/lightspark-rs","tags":["#sdk"]}
         \\
     ;
 

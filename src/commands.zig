@@ -23,11 +23,13 @@ const RunOptions = struct {
     help: bool = false,
     root: ?[]const u8 = null,
     max_date: ?[]const u8 = null,
+    ecosystem: ?[]const u8 = null,
     output: ?[]const u8 = null,
 
     // Validation flags to prevent duplicates
     root_seen: bool = false,
     max_date_seen: bool = false,
+    ecosystem_seen: bool = false,
     output_seen: bool = false,
 };
 
@@ -97,6 +99,18 @@ fn parseRunOptions(command: Command, args: []const []const u8) CommandError!RunO
             if (std.mem.startsWith(u8, max_date, "-")) return CommandError.InvalidOption;
 
             options.max_date = max_date;
+            i += 2;
+        } else if (eql(u8, arg, "-e") or eql(u8, arg, "--ecosystem")) {
+            if (options.ecosystem_seen) return CommandError.DuplicateOption;
+            options.ecosystem_seen = true;
+
+            if (i + 1 >= args.len) return CommandError.MissingArgument;
+            const ecosystem = args[i + 1];
+
+            if (ecosystem.len == 0) return CommandError.EmptyOptionValue;
+            if (std.mem.startsWith(u8, ecosystem, "-")) return CommandError.InvalidOption;
+
+            options.ecosystem = ecosystem;
             i += 2;
         } else if (std.mem.startsWith(u8, arg, "-")) {
             return CommandError.InvalidOption;
@@ -229,6 +243,6 @@ pub fn cmdExport(gpa: std.mem.Allocator, options: RunOptions) !void {
     const load_result = try taxonomy.load(root, options.max_date);
     _ = load_result;
     if (options.output) |output| {
-        try taxonomy.exportJson(output);
+        try taxonomy.exportJson(output, options.ecosystem);
     }
 }
