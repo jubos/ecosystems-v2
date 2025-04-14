@@ -1,10 +1,15 @@
 # 🌲 Crypto Ecosystems
-Crypto Ecosystems is a taxonomy of open source blockchain, Web3, cryptocurrency, and decentralized ecosystems and tying them to GitHub organizations and code repositories.
+Crypto Ecosystems is a taxonomy of open source blockchain, web3, cryptocurrency, and decentralized ecosystems and their code repositories.
 
-This repository is not complete, and hopefully it never is as there are new ecosystems and repositories created every day.
+This dataset is not complete, and hopefully it never will be as there are new ecosystems and repositories created every day.
 
-# How to use this taxonomy
+## How to use this taxonomy
 The taxonomy can be used to generate the set of crypto ecosystems, their corresponding sub ecosystems, and repositories at a particular time.
+
+You can export the taxonomy to a json format by using the following command:
+```bash
+./run.sh export exports.jsonl
+```
 
 ## How to update the taxonomy
 There is a domain specific language (DSL) containing the keywords that can make changes to the taxonomy.  You specify migrations by using files of the format
@@ -14,7 +19,7 @@ migrations/YYYY-MM-DDThhmmss_description_of_your_migration
 
 The datetime format is a loosely ISO8601 but without the ':' characters to make them valid files on Windows.
 
-Some examples migration files:
+Some examples migration filenames could be:
 ```bash
 migrations/2009-01-03T181500_add_bitcoin
 migrations/2015-07-30T152613_add_ethereum
@@ -22,9 +27,9 @@ migrations/2015-07-30T152613_add_ethereum
 
 Simply create your new migration and add changes to the taxonomy using the keywords discussed below.
 
-### Data Format
+## Data Format
 
-#### Example: Adding an ecosystem and connecting it.
+### Example: Adding an ecosystem and connecting it.
 ```lua
 -- Add ecosystems with the ecoadd keyword.  You can start a line with -- to denote a comment.
 ecoadd Lightning
@@ -58,13 +63,5 @@ Sample request language: "If you’re working in open source crypto, submit your
 Data Source: [Electric Capital Crypto Ecosystems](https://github.com/electric-capital/crypto-ecosystems)
 
 If you’re working in open source crypto, submit your repository [here](https://github.com/electric-capital/crypto-ecosystems) to be counted.
-
-## How to Contribute (Step-by-Step Guide)
-
-### Option 1: Adding a new ecosystem (e.g. blockchain)
-
-### Add a new sub ecosystem
-
-### Add a new repo
 
 Thank you for contributing and for reading the contribution guide! ❤️
